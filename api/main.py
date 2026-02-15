@@ -2,20 +2,36 @@ import sqlite3
 from fastapi import FastAPI, HTTPException
 from pathlib import Path
 
-app = FastAPI(title="NASA Space Database API")
+app = FastAPI(title="NASA Space Research API")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "database" / "space.db"
 
-# ============================================
-# SAFE DATABASE QUERY
-# ============================================
+# ======================================
+# HEALTH CHECK (for UptimeRobot)
+# ======================================
+
+@app.api_route("/health", methods=["GET", "HEAD"])
+def health():
+    return {"status": "ok"}
+
+# ======================================
+# ROOT
+# ======================================
+
+@app.api_route("/", methods=["GET", "HEAD"])
+def root():
+    return {"status": "NASA Space Research API Online"}
+
+# ======================================
+# SAFE DB QUERY
+# ======================================
 
 def query_db(query, params=()):
     if not DB_PATH.exists():
         raise HTTPException(
             status_code=500,
-            detail="Database not found. Deployment may still be initializing."
+            detail="Database not initialized."
         )
 
     conn = sqlite3.connect(DB_PATH)
@@ -31,13 +47,9 @@ def query_db(query, params=()):
     finally:
         conn.close()
 
-# ============================================
+# ======================================
 # ROUTES
-# ============================================
-
-@app.get("/")
-def root():
-    return {"status": "NASA Space Database Online"}
+# ======================================
 
 @app.get("/exoplanets")
 def get_exoplanets(limit: int = 50):
