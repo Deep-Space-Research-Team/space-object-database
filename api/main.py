@@ -1,39 +1,102 @@
 import sqlite3
-from fastapi import FastAPI, HTTPException
+import json
 from pathlib import Path
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse, Response
 
 app = FastAPI(title="NASA Space Research API")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / "database" / "space.db"
+DB_DIR = BASE_DIR / "database"
+DATA_DIR = BASE_DIR / "data"
 
-# ======================================
-# HEALTH CHECK (for UptimeRobot)
-# ======================================
+DB_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(exist_ok=True)
 
-@app.api_route("/health", methods=["GET", "HEAD"])
-def health():
+DB_PATH = DB_DIR / "space.db"
+DATA_FILE = DATA_DIR / "exoplanets.json"
+
+# ==========================================================
+# AUTO BUILD DATABASE ON STARTUP
+# ==========================================================
+
+@app.on_event("startup")
+def initialize_database():
+    if not DATA_FILE.exists():
+        print("Data file missing.")
+        return
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    # Drop table if exists (prevents corruption)
+    cur.execute("DROP TABLE IF EXISTS exoplanets")
+
+    # Create table
+    cur.execute("""
+    CREATE TABLE exoplanets (
+        name TEXT,
+        host_star TEXT,
+        orbital_period_days REAL,
+        radius_earth REAL,
+        mass_earth REAL,
+        discovery_method TEXT,
+        discovery_year INTEGER
+    )
+    """)
+
+    with open(DATA_FILE) as f:
+        exoplanets = json.load(f)
+
+    cur.executemany("""
+    INSERT INTO exoplanets VALUES (?,?,?,?,?,?,?)
+    """, [
+        (
+            p.get("name"),
+            p.get("host_star"),
+            p.get("orbital_period_days"),
+            p.get("radius_earth"),
+            p.get("mass_earth"),
+            p.get("discovery_method"),
+            p.get("discovery_year"),
+        )
+        for p in exoplanets
+    ])
+
+    conn.commit()
+    conn.close()
+
+    print("Database initialized successfully.")
+
+# ==========================================================
+# HEALTH
+# ==========================================================
+
+@app.get("/health")
+def health_get():
     return {"status": "ok"}
 
-# ======================================
-# ROOT
-# ======================================
+@app.head("/health")
+def health_head():
+    return Response(status_code=200)
 
-@app.api_route("/", methods=["GET", "HEAD"])
+# ==========================================================
+# ROOT
+# ==========================================================
+
+@app.get("/")
 def root():
     return {"status": "NASA Space Research API Online"}
 
-# ======================================
-# SAFE DB QUERY
-# ======================================
+@app.head("/")
+def root_head():
+    return Response(status_code=200)
+
+# ==========================================================
+# SAFE QUERY
+# ==========================================================
 
 def query_db(query, params=()):
-    if not DB_PATH.exists():
-        raise HTTPException(
-            status_code=500,
-            detail="Database not initialized."
-        )
-
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -47,9 +110,9 @@ def query_db(query, params=()):
     finally:
         conn.close()
 
-# ======================================
+# ==========================================================
 # ROUTES
-# ======================================
+# ==========================================================
 
 @app.get("/exoplanets")
 def get_exoplanets(limit: int = 50):
