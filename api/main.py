@@ -1,32 +1,49 @@
-from fastapi import FastAPI, Query
 import sqlite3
+from fastapi import FastAPI, HTTPException
 from pathlib import Path
 
-app = FastAPI(title="NASA Space Research API")
+app = FastAPI(title="NASA Space Database API")
 
-DB_PATH = Path(__file__).resolve().parent.parent / "database" / "space.db"
+BASE_DIR = Path(__file__).resolve().parent.parent
+DB_PATH = BASE_DIR / "database" / "space.db"
+
+# ============================================
+# SAFE DATABASE QUERY
+# ============================================
 
 def query_db(query, params=()):
+    if not DB_PATH.exists():
+        raise HTTPException(
+            status_code=500,
+            detail="Database not found. Deployment may still be initializing."
+        )
+
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute(query, params)
-    rows = cur.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+
+    try:
+        cur.execute(query, params)
+        rows = cur.fetchall()
+        return [dict(row) for row in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+# ============================================
+# ROUTES
+# ============================================
 
 @app.get("/")
 def root():
-    return {"status": "NASA Space Research API Online"}
+    return {"status": "NASA Space Database Online"}
 
 @app.get("/exoplanets")
-def get_exoplanets(
-    limit: int = 50,
-    offset: int = 0
-):
+def get_exoplanets(limit: int = 50):
     return query_db(
-        "SELECT * FROM exoplanets LIMIT ? OFFSET ?",
-        (limit, offset)
+        "SELECT * FROM exoplanets LIMIT ?",
+        (limit,)
     )
 
 @app.get("/exoplanets/search")
@@ -35,21 +52,3 @@ def search_exoplanets(q: str):
         "SELECT * FROM exoplanets WHERE name LIKE ?",
         (f"%{q}%",)
     )
-
-@app.get("/exoplanets/filter")
-def filter_exoplanets(
-    min_mass: float = Query(None),
-    max_mass: float = Query(None)
-):
-    query = "SELECT * FROM exoplanets WHERE 1=1"
-    params = []
-
-    if min_mass is not None:
-        query += " AND mass_earth >= ?"
-        params.append(min_mass)
-
-    if max_mass is not None:
-        query += " AND mass_earth <= ?"
-        params.append(max_mass)
-
-    return query_db(query, params)
