@@ -17,22 +17,40 @@ DB_PATH = DB_DIR / "space.db"
 DATA_FILE = DATA_DIR / "exoplanets.json"
 
 # ==========================================================
-# AUTO BUILD DATABASE ON STARTUP
+# SAFE DATABASE INITIALIZATION
 # ==========================================================
 
 @app.on_event("startup")
 def initialize_database():
+    print("Initializing database...")
+
     if not DATA_FILE.exists():
-        print("Data file missing.")
+        print("⚠ Data file missing. Skipping DB build.")
+        return
+
+    try:
+        content = DATA_FILE.read_text().strip()
+
+        if not content:
+            print("⚠ Data file empty. Skipping DB build.")
+            return
+
+        exoplanets = json.loads(content)
+
+        if not isinstance(exoplanets, list):
+            print("⚠ Data file invalid format. Skipping DB build.")
+            return
+
+    except Exception as e:
+        print("⚠ JSON parsing failed:", e)
         return
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    # Drop table if exists (prevents corruption)
+    # Always reset table safely
     cur.execute("DROP TABLE IF EXISTS exoplanets")
 
-    # Create table
     cur.execute("""
     CREATE TABLE exoplanets (
         name TEXT,
@@ -45,31 +63,33 @@ def initialize_database():
     )
     """)
 
-    with open(DATA_FILE) as f:
-        exoplanets = json.load(f)
+    try:
+        cur.executemany("""
+        INSERT INTO exoplanets VALUES (?,?,?,?,?,?,?)
+        """, [
+            (
+                p.get("name"),
+                p.get("host_star"),
+                p.get("orbital_period_days"),
+                p.get("radius_earth"),
+                p.get("mass_earth"),
+                p.get("discovery_method"),
+                p.get("discovery_year"),
+            )
+            for p in exoplanets
+        ])
 
-    cur.executemany("""
-    INSERT INTO exoplanets VALUES (?,?,?,?,?,?,?)
-    """, [
-        (
-            p.get("name"),
-            p.get("host_star"),
-            p.get("orbital_period_days"),
-            p.get("radius_earth"),
-            p.get("mass_earth"),
-            p.get("discovery_method"),
-            p.get("discovery_year"),
-        )
-        for p in exoplanets
-    ])
+        conn.commit()
+        print("✅ Database initialized successfully.")
 
-    conn.commit()
-    conn.close()
+    except Exception as e:
+        print("⚠ Insert failed:", e)
 
-    print("Database initialized successfully.")
+    finally:
+        conn.close()
 
 # ==========================================================
-# HEALTH
+# HEALTH ENDPOINT (for UptimeRobot)
 # ==========================================================
 
 @app.get("/health")
@@ -93,10 +113,16 @@ def root_head():
     return Response(status_code=200)
 
 # ==========================================================
-# SAFE QUERY
+# SAFE QUERY FUNCTION
 # ==========================================================
 
 def query_db(query, params=()):
+    if not DB_PATH.exists():
+        raise HTTPException(
+            status_code=500,
+            detail="Database not initialized."
+        )
+
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
