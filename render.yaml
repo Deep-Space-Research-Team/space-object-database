@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: nasa-space-research-api
+    env: python
+    plan: free
+
+    buildCommand: |
+      pip install -r requirements.txt
+
+    startCommand: |
+      python scripts/update_full_nasa_data.py &&
+      python scripts/build_database.py &&
+      uvicorn api.main:app --host 0.0.0.0 --port $PORT
+
+    autoDeploy: true
