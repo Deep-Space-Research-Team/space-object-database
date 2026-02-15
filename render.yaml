@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: nasa-space-research-api
+    name: space-object-database
     env: python
     plan: free
 
