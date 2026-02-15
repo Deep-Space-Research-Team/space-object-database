@@ -12,9 +12,6 @@ DB_PATH = DB_DIR / "space.db"
 conn = sqlite3.connect(DB_PATH)
 cur = conn.cursor()
 
-# -----------------------
-# Create Tables
-# -----------------------
 cur.execute("""
 CREATE TABLE IF NOT EXISTS exoplanets (
     name TEXT,
@@ -27,18 +24,6 @@ CREATE TABLE IF NOT EXISTS exoplanets (
 )
 """)
 
-cur.execute("""
-CREATE TABLE IF NOT EXISTS stars (
-    host_star TEXT,
-    star_mass REAL,
-    star_radius REAL,
-    star_temperature REAL
-)
-""")
-
-# -----------------------
-# Insert Exoplanets
-# -----------------------
 with open(DATA_DIR / "exoplanets.json") as f:
     exoplanets = json.load(f)
 
@@ -57,31 +42,7 @@ INSERT INTO exoplanets VALUES (?,?,?,?,?,?,?)
     for p in exoplanets
 ])
 
-# -----------------------
-# Insert Stars
-# -----------------------
-with open(DATA_DIR / "stars.json") as f:
-    stars = json.load(f)
-
-cur.executemany("""
-INSERT INTO stars VALUES (?,?,?,?)
-""", [
-    (
-        s.get("host_star"),
-        s.get("star_mass"),
-        s.get("star_radius"),
-        s.get("star_temperature"),
-    )
-    for s in stars
-])
-
-# -----------------------
-# Indexing (VERY IMPORTANT)
-# -----------------------
-cur.execute("CREATE INDEX IF NOT EXISTS idx_exoplanet_name ON exoplanets(name)")
-cur.execute("CREATE INDEX IF NOT EXISTS idx_host_star ON exoplanets(host_star)")
-
 conn.commit()
 conn.close()
 
-print("High-speed research database built successfully!")
+print("Database built successfully!")
