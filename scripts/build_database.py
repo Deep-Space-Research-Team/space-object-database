@@ -5,15 +5,26 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 DB_DIR = BASE_DIR / "database"
+
 DB_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(exist_ok=True)
 
 DB_PATH = DB_DIR / "space.db"
+DATA_FILE = DATA_DIR / "exoplanets.json"
+
+if not DATA_FILE.exists():
+    print("Data file missing.")
+    exit()
 
 conn = sqlite3.connect(DB_PATH)
 cur = conn.cursor()
 
+# Drop table if exists (prevents corruption)
+cur.execute("DROP TABLE IF EXISTS exoplanets")
+
+# Create table
 cur.execute("""
-CREATE TABLE IF NOT EXISTS exoplanets (
+CREATE TABLE exoplanets (
     name TEXT,
     host_star TEXT,
     orbital_period_days REAL,
@@ -24,7 +35,7 @@ CREATE TABLE IF NOT EXISTS exoplanets (
 )
 """)
 
-with open(DATA_DIR / "exoplanets.json") as f:
+with open(DATA_FILE) as f:
     exoplanets = json.load(f)
 
 cur.executemany("""
@@ -45,4 +56,4 @@ INSERT INTO exoplanets VALUES (?,?,?,?,?,?,?)
 conn.commit()
 conn.close()
 
-print("Database built successfully!")
+print("Database rebuilt successfully.")
