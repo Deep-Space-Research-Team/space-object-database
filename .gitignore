@@ -1,0 +1,4 @@
+data/asteroids.json
+data/neows_feed.json
+database/
+*.db
