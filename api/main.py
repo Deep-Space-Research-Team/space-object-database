@@ -183,3 +183,44 @@ def health():
 @app.head("/health")
 def health_head():
     return Response(status_code=200)
+    
+# =====================================================
+# Research
+# =====================================================
+
+@app.get("/research/summary")
+def research_summary(limit: int = 200):
+    planets = fetch_exoplanets(limit)
+
+    total = len(planets)
+
+    category_count = {}
+    discovery_methods = {}
+    total_radius = 0
+    radius_count = 0
+    latest_year = 0
+
+    for p in planets:
+        cls = p["classification"]
+        category_count[cls] = category_count.get(cls, 0) + 1
+
+        method = p.get("discovery_method") or "Unknown"
+        discovery_methods[method] = discovery_methods.get(method, 0) + 1
+
+        if p.get("radius_earth"):
+            total_radius += float(p["radius_earth"])
+            radius_count += 1
+
+        if p.get("discovery_year"):
+            latest_year = max(latest_year, p["discovery_year"])
+
+    avg_radius = round(total_radius / radius_count, 2) if radius_count else None
+
+    most_common_method = max(discovery_methods, key=discovery_methods.get)
+
+    return {
+        "total_planets": total,
+        "category_distribution": category_count,
+        "average_radius": avg_radius,
+        "latest_discovery_year": latest_year,
+        "most_common_discovery_method": most_common_method
