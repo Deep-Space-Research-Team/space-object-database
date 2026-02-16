@@ -119,7 +119,7 @@ def fetch_exoplanets(limit: int):
     return normalized
 
 # =====================================================
-# EXOPLANETS ENDPOINT (WITH SEARCH SUPPORT)
+# EXOPLANETS ENDPOINT
 # =====================================================
 
 @app.get("/exoplanets")
@@ -127,7 +127,7 @@ def get_exoplanets(
     limit: int = Query(20, ge=1, le=200),
     search: str = Query(None)
 ):
-    planets = fetch_exoplanets(500)  # larger pool for search
+    planets = fetch_exoplanets(500)
 
     if search:
         query = search.strip().lower()
@@ -139,7 +139,7 @@ def get_exoplanets(
     return planets[:limit]
 
 # =====================================================
-# ASTEROIDS (NASA LIVE)
+# ASTEROIDS
 # =====================================================
 
 @app.get("/asteroids/today")
@@ -169,7 +169,7 @@ def get_asteroids_today():
     return results
 
 # =====================================================
-# HEALTH
+# ROOT & HEALTH
 # =====================================================
 
 @app.get("/")
@@ -183,13 +183,14 @@ def health():
 @app.head("/health")
 def health_head():
     return Response(status_code=200)
-    
+
 # =====================================================
-# Research
+# RESEARCH SUMMARY (FIXED)
 # =====================================================
 
 @app.get("/research/summary")
 def research_summary(limit: int = 200):
+
     planets = fetch_exoplanets(limit)
 
     total = len(planets)
@@ -201,7 +202,8 @@ def research_summary(limit: int = 200):
     latest_year = 0
 
     for p in planets:
-        cls = p["classification"]
+
+        cls = p.get("classification") or "Unknown"
         category_count[cls] = category_count.get(cls, 0) + 1
 
         method = p.get("discovery_method") or "Unknown"
@@ -216,7 +218,10 @@ def research_summary(limit: int = 200):
 
     avg_radius = round(total_radius / radius_count, 2) if radius_count else None
 
-    most_common_method = max(discovery_methods, key=discovery_methods.get)
+    most_common_method = (
+        max(discovery_methods, key=discovery_methods.get)
+        if discovery_methods else "Unknown"
+    )
 
     return {
         "total_planets": total,
@@ -224,3 +229,4 @@ def research_summary(limit: int = 200):
         "average_radius": avg_radius,
         "latest_discovery_year": latest_year,
         "most_common_discovery_method": most_common_method
+    }
