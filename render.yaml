@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: space-object-database
+    env: python
+    plan: free
+
+    buildCommand: |
+      pip install -r requirements.txt
+
+    startCommand: |
+      python scripts/build_database.py &&
+      uvicorn api.main:app --host 0.0.0.0 --port $PORT
+
+    autoDeploy: true

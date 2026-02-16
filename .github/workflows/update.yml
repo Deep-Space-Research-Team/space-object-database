@@ -1,0 +1,34 @@
+name: Update NASA Space Data
+
+on:
+  schedule:
+    - cron: "0 2 * * 0"  # every Sunday at 02:00 UTC
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        pip install pandas requests
+
+    - name: Run update
+      run: |
+        python scripts/update_full_nasa_data.py
+
+    - name: Commit changes
+      run: |
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
+        git add data/
+        git commit -m "Auto update full NASA dataset"
+        git push
