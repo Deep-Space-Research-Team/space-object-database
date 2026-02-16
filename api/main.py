@@ -5,9 +5,9 @@ from functools import lru_cache
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import Response
 
-# ==========================================
+# ==========================================================
 # CONFIG
-# ==========================================
+# ==========================================================
 
 NASA_API_KEY = os.getenv("NASA_API_KEY")
 EXOPLANET_API = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
@@ -21,9 +21,9 @@ if not NASA_API_KEY:
 
 app = FastAPI(title="NASA Live Space API")
 
-# ==========================================
-# HEALTH CHECK
-# ==========================================
+# ==========================================================
+# HEALTH
+# ==========================================================
 
 @app.get("/health")
 def health():
@@ -33,9 +33,17 @@ def health():
 def health_head():
     return Response(status_code=200)
 
-# ==========================================
+# ==========================================================
+# DEBUG ROUTE (Remove later if needed)
+# ==========================================================
+
+@app.get("/routes")
+def list_routes():
+    return [route.path for route in app.routes]
+
+# ==========================================================
 # SAFE REQUEST FUNCTION
-# ==========================================
+# ==========================================================
 
 def safe_request(url, params):
     for attempt in range(MAX_RETRIES):
@@ -56,9 +64,9 @@ def safe_request(url, params):
                 detail=f"External API error: {str(e)}"
             )
 
-# ==========================================
-# LIVE EXOPLANETS (Cached)
-# ==========================================
+# ==========================================================
+# EXOPLANETS (LIVE)
+# ==========================================================
 
 @lru_cache(maxsize=32)
 def fetch_exoplanets(limit: int):
@@ -78,9 +86,9 @@ def fetch_exoplanets(limit: int):
 def get_exoplanets(limit: int = Query(20, ge=1, le=200)):
     return fetch_exoplanets(limit)
 
-# ==========================================
-# LIVE ASTEROIDS (Cached per minute)
-# ==========================================
+# ==========================================================
+# ASTEROIDS (LIVE NEO FEED)
+# ==========================================================
 
 @lru_cache(maxsize=4)
 def fetch_asteroids():
@@ -91,3 +99,18 @@ def fetch_asteroids():
 @app.get("/asteroids/today")
 def get_asteroids():
     return fetch_asteroids()
+
+# ==========================================================
+# ROOT
+# ==========================================================
+
+@app.get("/")
+def root():
+    return {
+        "status": "NASA Live Space API Online",
+        "endpoints": [
+            "/health",
+            "/exoplanets?limit=20",
+            "/asteroids/today"
+        ]
+    }
