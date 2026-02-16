@@ -1,4 +1,3 @@
-data/asteroids.json
-data/neows_feed.json
+data/
 database/
 *.db
