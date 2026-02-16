@@ -1,155 +1,93 @@
-import sqlite3
-import json
-from pathlib import Path
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse, Response
+import os
+import time
+import requests
+from functools import lru_cache
+from fastapi import FastAPI, Query, HTTPException
+from fastapi.responses import Response
 
-app = FastAPI(title="NASA Space Research API")
+# ==========================================
+# CONFIG
+# ==========================================
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DB_DIR = BASE_DIR / "database"
-DATA_DIR = BASE_DIR / "data"
+NASA_API_KEY = os.getenv("NASA_API_KEY")
+EXOPLANET_API = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
+NEO_API = "https://api.nasa.gov/neo/rest/v1/feed"
 
-DB_DIR.mkdir(exist_ok=True)
-DATA_DIR.mkdir(exist_ok=True)
+REQUEST_TIMEOUT = 30
+MAX_RETRIES = 3
 
-DB_PATH = DB_DIR / "space.db"
-DATA_FILE = DATA_DIR / "exoplanets.json"
+if not NASA_API_KEY:
+    raise RuntimeError("NASA_API_KEY environment variable not set")
 
-# ==========================================================
-# SAFE DATABASE INITIALIZATION
-# ==========================================================
+app = FastAPI(title="NASA Live Space API")
 
-@app.on_event("startup")
-def initialize_database():
-    print("Initializing database...")
-
-    if not DATA_FILE.exists():
-        print("⚠ Data file missing. Skipping DB build.")
-        return
-
-    try:
-        content = DATA_FILE.read_text().strip()
-
-        if not content:
-            print("⚠ Data file empty. Skipping DB build.")
-            return
-
-        exoplanets = json.loads(content)
-
-        if not isinstance(exoplanets, list):
-            print("⚠ Data file invalid format. Skipping DB build.")
-            return
-
-    except Exception as e:
-        print("⚠ JSON parsing failed:", e)
-        return
-
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    # Always reset table safely
-    cur.execute("DROP TABLE IF EXISTS exoplanets")
-
-    cur.execute("""
-    CREATE TABLE exoplanets (
-        name TEXT,
-        host_star TEXT,
-        orbital_period_days REAL,
-        radius_earth REAL,
-        mass_earth REAL,
-        discovery_method TEXT,
-        discovery_year INTEGER
-    )
-    """)
-
-    try:
-        cur.executemany("""
-        INSERT INTO exoplanets VALUES (?,?,?,?,?,?,?)
-        """, [
-            (
-                p.get("name"),
-                p.get("host_star"),
-                p.get("orbital_period_days"),
-                p.get("radius_earth"),
-                p.get("mass_earth"),
-                p.get("discovery_method"),
-                p.get("discovery_year"),
-            )
-            for p in exoplanets
-        ])
-
-        conn.commit()
-        print("✅ Database initialized successfully.")
-
-    except Exception as e:
-        print("⚠ Insert failed:", e)
-
-    finally:
-        conn.close()
-
-# ==========================================================
-# HEALTH ENDPOINT (for UptimeRobot)
-# ==========================================================
+# ==========================================
+# HEALTH CHECK
+# ==========================================
 
 @app.get("/health")
-def health_get():
+def health():
     return {"status": "ok"}
 
 @app.head("/health")
 def health_head():
     return Response(status_code=200)
 
-# ==========================================================
-# ROOT
-# ==========================================================
+# ==========================================
+# SAFE REQUEST FUNCTION
+# ==========================================
 
-@app.get("/")
-def root():
-    return {"status": "NASA Space Research API Online"}
+def safe_request(url, params):
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = requests.get(
+                url,
+                params=params,
+                timeout=REQUEST_TIMEOUT
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(2)
+                continue
+            raise HTTPException(
+                status_code=502,
+                detail=f"External API error: {str(e)}"
+            )
 
-@app.head("/")
-def root_head():
-    return Response(status_code=200)
+# ==========================================
+# LIVE EXOPLANETS (Cached)
+# ==========================================
 
-# ==========================================================
-# SAFE QUERY FUNCTION
-# ==========================================================
+@lru_cache(maxsize=32)
+def fetch_exoplanets(limit: int):
+    query = f"""
+    select top {limit}
+    pl_name, hostname, pl_orbper, pl_rade,
+    pl_bmasse, discoverymethod, disc_year
+    from ps
+    """
 
-def query_db(query, params=()):
-    if not DB_PATH.exists():
-        raise HTTPException(
-            status_code=500,
-            detail="Database not initialized."
-        )
-
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-
-    try:
-        cur.execute(query, params)
-        rows = cur.fetchall()
-        return [dict(row) for row in rows]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        conn.close()
-
-# ==========================================================
-# ROUTES
-# ==========================================================
+    return safe_request(EXOPLANET_API, {
+        "query": query,
+        "format": "json"
+    })
 
 @app.get("/exoplanets")
-def get_exoplanets(limit: int = 50):
-    return query_db(
-        "SELECT * FROM exoplanets LIMIT ?",
-        (limit,)
-    )
+def get_exoplanets(limit: int = Query(20, ge=1, le=200)):
+    return fetch_exoplanets(limit)
 
-@app.get("/exoplanets/search")
-def search_exoplanets(q: str):
-    return query_db(
-        "SELECT * FROM exoplanets WHERE name LIKE ?",
-        (f"%{q}%",)
-    )
+# ==========================================
+# LIVE ASTEROIDS (Cached per minute)
+# ==========================================
+
+@lru_cache(maxsize=4)
+def fetch_asteroids():
+    return safe_request(NEO_API, {
+        "api_key": NASA_API_KEY
+    })
+
+@app.get("/asteroids/today")
+def get_asteroids():
+    return fetch_asteroids()
