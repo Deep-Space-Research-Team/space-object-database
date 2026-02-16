@@ -9,7 +9,7 @@ from fastapi.responses import Response
 # CONFIG
 # ==========================================================
 
-NASA_API_KEY = os.getenv("lCErCEkvYCESm6EljQYaXtCJ2Z7M3oRSqOPmWcav")
+NASA_API_KEY = os.getenv("NASA_API_KEY")
 EXOPLANET_API = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
 NEO_API = "https://api.nasa.gov/neo/rest/v1/feed"
 
