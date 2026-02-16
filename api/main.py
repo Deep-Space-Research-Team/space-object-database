@@ -10,6 +10,7 @@ from fastapi.responses import Response
 # =====================================================
 
 NASA_API_KEY = os.getenv("NASA_API_KEY")
+
 EXOPLANET_API = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
 NEO_API = "https://api.nasa.gov/neo/rest/v1/feed"
 
@@ -48,7 +49,7 @@ def classify_planet(radius, mass, orbital_period):
     return "Unknown"
 
 # =====================================================
-# SAFE REQUEST (Retry Logic)
+# SAFE REQUEST
 # =====================================================
 
 def safe_request(url, params):
@@ -64,7 +65,7 @@ def safe_request(url, params):
             raise HTTPException(status_code=502, detail="External API error")
 
 # =====================================================
-# EXOPLANETS (NO DUPLICATES)
+# FETCH EXOPLANETS (NO DUPLICATES)
 # =====================================================
 
 @lru_cache(maxsize=32)
@@ -88,16 +89,15 @@ def fetch_exoplanets(limit: int):
         "format": "json"
     })
 
-    # Remove duplicate planet names manually
-    unique_planets = {}
+    unique = {}
     for p in raw:
         name = p.get("pl_name")
-        if name and name not in unique_planets:
-            unique_planets[name] = p
+        if name and name not in unique:
+            unique[name] = p
 
     normalized = []
 
-    for p in list(unique_planets.values())[:limit]:
+    for p in list(unique.values())[:limit]:
 
         radius = p.get("pl_rade")
         mass = p.get("pl_bmasse")
@@ -118,9 +118,25 @@ def fetch_exoplanets(limit: int):
 
     return normalized
 
+# =====================================================
+# EXOPLANETS ENDPOINT (WITH SEARCH SUPPORT)
+# =====================================================
+
 @app.get("/exoplanets")
-def get_exoplanets(limit: int = Query(20, ge=1, le=200)):
-    return fetch_exoplanets(limit)
+def get_exoplanets(
+    limit: int = Query(20, ge=1, le=200),
+    search: str = Query(None)
+):
+    planets = fetch_exoplanets(500)  # larger pool for search
+
+    if search:
+        query = search.strip().lower()
+        planets = [
+            p for p in planets
+            if query in (p["name"] or "").lower()
+        ]
+
+    return planets[:limit]
 
 # =====================================================
 # ASTEROIDS (NASA LIVE)
@@ -128,6 +144,7 @@ def get_exoplanets(limit: int = Query(20, ge=1, le=200)):
 
 @app.get("/asteroids/today")
 def get_asteroids_today():
+
     if not NASA_API_KEY:
         raise HTTPException(status_code=500, detail="NASA_API_KEY not set")
 
@@ -152,7 +169,7 @@ def get_asteroids_today():
     return results
 
 # =====================================================
-# HEALTH CHECK
+# HEALTH
 # =====================================================
 
 @app.get("/")
